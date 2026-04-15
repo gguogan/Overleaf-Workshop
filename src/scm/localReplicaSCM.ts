@@ -404,7 +404,55 @@ export class LocalReplicaSCMProvider extends BaseSCM {
     }
 
     /**
-     * Force pull: overwrite all local files with remote content.
+     * Walk VFS file tree and return all relative file paths.
+     */
+    private async walkVfsFiles(root: string='/', token?: vscode.CancellationToken): Promise<string[]> {
+        const files: string[] = [];
+        const queue: string[] = [root];
+        while (queue.length!==0) {
+            const nextRoot = queue.shift()!;
+            try {
+                const vfsUri = this.vfs.pathToUri(nextRoot);
+                const items = await vscode.workspace.fs.readDirectory(vfsUri);
+                if (token?.isCancellationRequested) { return files; }
+                for (const [name, type] of items) {
+                    const relPath = nextRoot + name;
+                    if (this.matchIgnorePatterns(relPath)) { continue; }
+                    if (type === vscode.FileType.Directory) { queue.push(relPath+'/'); }
+                    else { files.push(relPath); }
+                }
+            } catch { /* skip */ }
+        }
+        return files;
+    }
+
+    /**
+     * Walk local file tree and return all relative file paths.
+     */
+    private async walkLocalFiles(root: string='/', token?: vscode.CancellationToken): Promise<string[]> {
+        const files: string[] = [];
+        const queue: string[] = [root];
+        while (queue.length!==0) {
+            const nextRoot = queue.shift()!;
+            try {
+                const dirUri = vscode.Uri.joinPath(this.baseUri, nextRoot);
+                const items = await vscode.workspace.fs.readDirectory(dirUri);
+                if (token?.isCancellationRequested) { return files; }
+                for (const [name, type] of items) {
+                    const relPath = nextRoot + name;
+                    if (this.matchIgnorePatterns(relPath)) { continue; }
+                    if (type === vscode.FileType.Directory) { queue.push(relPath+'/'); }
+                    else { files.push(relPath); }
+                }
+            } catch { /* skip */ }
+        }
+        return files;
+    }
+
+    /**
+     * Force pull: make local look exactly like remote.
+     * - Remote files → overwrite/create locally
+     * - Local-only files → delete locally
      */
     public async pullFromOverleaf(root: string='/'): Promise<boolean|undefined> {
         return await vscode.window.withProgress({
@@ -412,40 +460,54 @@ export class LocalReplicaSCMProvider extends BaseSCM {
             title: vscode.l10n.t('Force Pull from Overleaf'),
             cancellable: true,
         }, async (progress, token) => {
-            const files: string[] = [];
-            const queue: string[] = [root];
-            while (queue.length!==0) {
-                const nextRoot = queue.shift();
-                const vfsUri = this.vfs.pathToUri(nextRoot!);
-                const items = await vscode.workspace.fs.readDirectory(vfsUri);
-                if (token.isCancellationRequested) { return undefined; }
-                for (const [name, type] of items) {
-                    const relPath = nextRoot + name;
-                    if (this.matchIgnorePatterns(relPath)) { continue; }
-                    if (type === vscode.FileType.Directory) { queue.push(relPath+'/'); }
-                    else { files.push(relPath); }
-                }
-            }
-            const total = files.length;
-            for (let i=0; i<total; i++) {
+            const remoteFiles = await this.walkVfsFiles(root, token);
+            const localFiles = await this.walkLocalFiles(root, token);
+            if (token.isCancellationRequested) { return undefined; }
+
+            const remoteSet = new Set(remoteFiles);
+            const localSet = new Set(localFiles);
+            const total = remoteFiles.length + localFiles.filter(f => !remoteSet.has(f)).length;
+            let done = 0;
+
+            // Pull all remote files to local
+            for (const relPath of remoteFiles) {
                 if (token.isCancellationRequested) { return false; }
-                progress.report({increment: 100/total, message: files[i]});
+                progress.report({increment: 100/total, message: `↓ ${relPath}`});
                 try {
-                    const vfsUri = this.vfs.pathToUri(files[i]);
+                    const vfsUri = this.vfs.pathToUri(relPath);
                     const remoteContent = await vscode.workspace.fs.readFile(vfsUri);
-                    await this.writeFile(files[i], remoteContent);
-                    this.baseCache[files[i]] = remoteContent;
-                    this.setBypassCache(files[i], remoteContent);
+                    await this.writeFile(relPath, remoteContent);
+                    this.baseCache[relPath] = remoteContent;
+                    this.setBypassCache(relPath, remoteContent);
                 } catch (error) {
-                    console.error(`Pull failed for ${files[i]}:`, error);
+                    console.error(`Pull failed for ${relPath}:`, error);
                 }
+                done++;
             }
+
+            // Delete local-only files (not on remote)
+            for (const relPath of localFiles) {
+                if (remoteSet.has(relPath)) { continue; }
+                if (token.isCancellationRequested) { return false; }
+                progress.report({increment: 100/total, message: `✕ ${relPath}`});
+                try {
+                    const localUri = vscode.Uri.joinPath(this.baseUri, relPath);
+                    await vscode.workspace.fs.delete(localUri);
+                    delete this.baseCache[relPath];
+                } catch (error) {
+                    console.error(`Delete local failed for ${relPath}:`, error);
+                }
+                done++;
+            }
+
             return true;
         });
     }
 
     /**
-     * Force push: overwrite all remote files with local content.
+     * Force push: make remote look exactly like local.
+     * - Local files → overwrite/create on remote
+     * - Remote-only files → delete from remote
      */
     public async pushToOverleaf(root: string='/'): Promise<boolean|undefined> {
         return await vscode.window.withProgress({
@@ -453,36 +515,48 @@ export class LocalReplicaSCMProvider extends BaseSCM {
             title: vscode.l10n.t('Force Push to Overleaf'),
             cancellable: true,
         }, async (progress, token) => {
-            const files: string[] = [];
-            const queue: string[] = [root];
-            while (queue.length!==0) {
-                const nextRoot = queue.shift();
-                const vfsUri = this.vfs.pathToUri(nextRoot!);
-                const items = await vscode.workspace.fs.readDirectory(vfsUri);
-                if (token.isCancellationRequested) { return undefined; }
-                for (const [name, type] of items) {
-                    const relPath = nextRoot + name;
-                    if (this.matchIgnorePatterns(relPath)) { continue; }
-                    if (type === vscode.FileType.Directory) { queue.push(relPath+'/'); }
-                    else { files.push(relPath); }
-                }
-            }
-            const total = files.length;
-            for (let i=0; i<total; i++) {
+            const localFiles = await this.walkLocalFiles(root, token);
+            const remoteFiles = await this.walkVfsFiles(root, token);
+            if (token.isCancellationRequested) { return undefined; }
+
+            const localSet = new Set(localFiles);
+            const remoteSet = new Set(remoteFiles);
+            const total = localFiles.length + remoteFiles.filter(f => !localSet.has(f)).length;
+            let done = 0;
+
+            // Push all local files to remote
+            for (const relPath of localFiles) {
                 if (token.isCancellationRequested) { return false; }
-                progress.report({increment: 100/total, message: files[i]});
-                const localContent = await this.readFile(files[i]);
-                if (localContent) {
-                    try {
-                        const vfsUri = this.vfs.pathToUri(files[i]);
+                progress.report({increment: 100/total, message: `↑ ${relPath}`});
+                try {
+                    const localContent = await this.readFile(relPath);
+                    if (localContent) {
+                        const vfsUri = this.vfs.pathToUri(relPath);
                         await vscode.workspace.fs.writeFile(vfsUri, localContent);
-                        this.baseCache[files[i]] = localContent;
-                        this.setBypassCache(files[i], localContent);
-                    } catch (error) {
-                        console.error(`Push failed for ${files[i]}:`, error);
+                        this.baseCache[relPath] = localContent;
+                        this.setBypassCache(relPath, localContent);
                     }
+                } catch (error) {
+                    console.error(`Push failed for ${relPath}:`, error);
                 }
+                done++;
             }
+
+            // Delete remote-only files (not in local)
+            for (const relPath of remoteFiles) {
+                if (localSet.has(relPath)) { continue; }
+                if (token.isCancellationRequested) { return false; }
+                progress.report({increment: 100/total, message: `✕ ${relPath}`});
+                try {
+                    const vfsUri = this.vfs.pathToUri(relPath);
+                    await vscode.workspace.fs.delete(vfsUri);
+                    delete this.baseCache[relPath];
+                } catch (error) {
+                    console.error(`Delete remote failed for ${relPath}:`, error);
+                }
+                done++;
+            }
+
             return true;
         });
     }
