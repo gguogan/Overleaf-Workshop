@@ -206,6 +206,110 @@ export class LocalReplicaSCMProvider extends BaseSCM {
         return true;
     }
 
+    /**
+     * Pull all files from Overleaf VFS to local, overwriting local content.
+     */
+    public async pullFromOverleaf(root: string='/'): Promise<boolean|undefined> {
+        return await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: vscode.l10n.t('Pull from Overleaf'),
+            cancellable: true,
+        }, async (progress, token) => {
+            // breadth-first search for the files in VFS
+            const files: [string,string][] = [];
+            const queue: string[] = [root];
+            while (queue.length!==0) {
+                const nextRoot = queue.shift();
+                const vfsUri = this.vfs.pathToUri(nextRoot!);
+                const items = await vscode.workspace.fs.readDirectory(vfsUri);
+                if (token.isCancellationRequested) { return undefined; }
+                for (const [name, type] of items) {
+                    const relPath = nextRoot + name;
+                    if (this.matchIgnorePatterns(relPath)) { continue; }
+                    if (type === vscode.FileType.Directory) {
+                        queue.push(relPath+'/');
+                    } else {
+                        files.push([name, relPath]);
+                    }
+                }
+            }
+
+            // pull each file from VFS to local
+            const total = files.length;
+            for (let i=0; i<total; i++) {
+                const [name, relPath] = files[i];
+                if (token.isCancellationRequested) { return false; }
+                progress.report({increment: 100/total, message: relPath});
+                const vfsUri = this.vfs.pathToUri(relPath);
+                try {
+                    const remoteContent = await vscode.workspace.fs.readFile(vfsUri);
+                    this.setBypassCache(relPath, remoteContent);
+                    await this.writeFile(relPath, remoteContent);
+                    this.baseCache[relPath] = remoteContent;
+                } catch (error) {
+                    console.error(`Pull failed for ${relPath}:`, error);
+                }
+            }
+            return true;
+        });
+    }
+
+    /**
+     * Push all local files to Overleaf VFS, overwriting remote content.
+     */
+    public async pushToOverleaf(root: string='/'): Promise<boolean|undefined> {
+        return await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: vscode.l10n.t('Push to Overleaf'),
+            cancellable: true,
+        }, async (progress, token) => {
+            // walk VFS to get file list (use VFS as reference structure)
+            const files: [string,string][] = [];
+            const queue: string[] = [root];
+            while (queue.length!==0) {
+                const nextRoot = queue.shift();
+                const vfsUri = this.vfs.pathToUri(nextRoot!);
+                const items = await vscode.workspace.fs.readDirectory(vfsUri);
+                if (token.isCancellationRequested) { return undefined; }
+                for (const [name, type] of items) {
+                    const relPath = nextRoot + name;
+                    if (this.matchIgnorePatterns(relPath)) { continue; }
+                    if (type === vscode.FileType.Directory) {
+                        queue.push(relPath+'/');
+                    } else {
+                        files.push([name, relPath]);
+                    }
+                }
+            }
+
+            // push each local file to VFS
+            const total = files.length;
+            let pushed = 0;
+            for (let i=0; i<total; i++) {
+                const [name, relPath] = files[i];
+                if (token.isCancellationRequested) { return false; }
+                progress.report({increment: 100/total, message: relPath});
+                const localContent = await this.readFile(relPath);
+                if (localContent!==undefined) {
+                    const vfsUri = this.vfs.pathToUri(relPath);
+                    try {
+                        const remoteContent = await vscode.workspace.fs.readFile(vfsUri);
+                        // only push if content differs
+                        if (hashCode(localContent) !== hashCode(remoteContent)) {
+                            await vscode.workspace.fs.writeFile(vfsUri, localContent);
+                            pushed++;
+                        }
+                        this.setBypassCache(relPath, localContent);
+                        this.baseCache[relPath] = localContent;
+                    } catch (error) {
+                        console.error(`Push failed for ${relPath}:`, error);
+                    }
+                }
+            }
+            return true;
+        });
+    }
+
     private async overwrite(root: string='/'): Promise<boolean|undefined> {
         return await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,

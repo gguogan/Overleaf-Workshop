@@ -393,6 +393,20 @@
         "title": "%commands.collaboration.jumpToUser.title%",
         "enablement": "resourceScheme == overleaf-workshop || overleaf-workshop.activate",
         "category": "%extension.displayName%"
+      },
+      {
+        "command": "overleaf-workshop.manualSync.pull",
+        "title": "Pull from Overleaf",
+        "icon": "$(cloud-download)",
+        "enablement": "overleaf-workshop.activate",
+        "category": "%extension.displayName%"
+      },
+      {
+        "command": "overleaf-workshop.manualSync.push",
+        "title": "Push to Overleaf",
+        "icon": "$(cloud-upload)",
+        "enablement": "overleaf-workshop.activate",
+        "category": "%extension.displayName%"
       }
     ],
     "keybindings": [
@@ -419,6 +433,18 @@
         "mac": "cmd+shift+c",
         "command": "overleaf-workshop.collaboration.copyLineRef",
         "when": "editorTextFocus && resourceScheme == overleaf-workshop"
+      },
+      {
+        "key": "ctrl+alt+down",
+        "mac": "cmd+alt+down",
+        "command": "overleaf-workshop.manualSync.pull",
+        "when": "overleaf-workshop.activate"
+      },
+      {
+        "key": "ctrl+alt+up",
+        "mac": "cmd+alt+up",
+        "command": "overleaf-workshop.manualSync.push",
+        "when": "overleaf-workshop.activate"
       }
     ],
     "configuration": {

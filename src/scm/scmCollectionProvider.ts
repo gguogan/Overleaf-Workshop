@@ -292,6 +292,35 @@ export class SCMCollectionProvider extends vscode.Disposable {
         });
     }
 
+    private getLocalReplica(): LocalReplicaSCMProvider | undefined {
+        const record = this.scms.find(s => s.scm instanceof LocalReplicaSCMProvider && s.enabled);
+        return record ? record.scm as LocalReplicaSCMProvider : undefined;
+    }
+
+    async manualPull() {
+        const scm = this.getLocalReplica();
+        if (!scm) {
+            vscode.window.showWarningMessage(vscode.l10n.t('No Local Replica configured. Please configure one via SCM settings first.'));
+            return;
+        }
+        const result = await scm.pullFromOverleaf();
+        if (result === true) {
+            vscode.window.showInformationMessage(vscode.l10n.t('Pulled from Overleaf successfully.'));
+        }
+    }
+
+    async manualPush() {
+        const scm = this.getLocalReplica();
+        if (!scm) {
+            vscode.window.showWarningMessage(vscode.l10n.t('No Local Replica configured. Please configure one via SCM settings first.'));
+            return;
+        }
+        const result = await scm.pushToOverleaf();
+        if (result === true) {
+            vscode.window.showInformationMessage(vscode.l10n.t('Pushed to Overleaf successfully.'));
+        }
+    }
+
     get triggers() {
         return [
             // Register: HistoryViewProvider
@@ -305,6 +334,12 @@ export class SCMCollectionProvider extends vscode.Disposable {
             }),
             vscode.commands.registerCommand(`${ROOT_NAME}.projectSCM.newSCM`, (scmProto) => {
                 return this.createNewSCM(scmProto);
+            }),
+            vscode.commands.registerCommand(`${ROOT_NAME}.manualSync.pull`, () => {
+                return this.manualPull();
+            }),
+            vscode.commands.registerCommand(`${ROOT_NAME}.manualSync.push`, () => {
+                return this.manualPush();
             }),
             this as vscode.Disposable,
         ];
