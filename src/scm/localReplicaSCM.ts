@@ -256,9 +256,19 @@ export class LocalReplicaSCMProvider extends BaseSCM {
                 const localHash = localContent ? hashCode(localContent) : -1;
                 const remoteHash = hashCode(remoteContent);
 
-                if (baseContent===undefined || localContent===undefined) {
-                    // no base or no local file → treat as new remote file
+                if (localContent===undefined) {
+                    // no local file → new remote file, need to pull
                     newRemote.push(relPath);
+                } else if (baseContent===undefined) {
+                    // no base snapshot (first sync) → compare local vs remote directly
+                    if (localHash === remoteHash) {
+                        // same content → just record base, no action needed
+                        this.baseCache[relPath] = remoteContent;
+                        unchanged.push(relPath);
+                    } else {
+                        // different content, can't tell which is newer → conflict
+                        toMerge.push(relPath);
+                    }
                 } else if (localHash === remoteHash) {
                     // local and remote are the same → nothing to do
                     unchanged.push(relPath);

@@ -10,8 +10,8 @@ Auto-sync is **disabled by default**. All syncing is manual and explicit:
 
 | Shortcut | Command | Behavior |
 |----------|---------|----------|
-| <kbd>Ctrl</kbd>+<kbd>Down</kbd> | **Force Push** | Overwrite Overleaf with local files |
-| <kbd>Ctrl</kbd>+<kbd>Up</kbd> | **Force Pull** | Overwrite local with Overleaf files |
+| <kbd>Ctrl</kbd>+<kbd>Up</kbd> | **Force Push** | Overwrite Overleaf with local files |
+| <kbd>Ctrl</kbd>+<kbd>Down</kbd> | **Force Pull** | Overwrite local with Overleaf files |
 | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>S</kbd> | **Smart Sync** | 3-way diff, auto push/pull/merge |
 
 **Smart Sync** compares three versions of each file (base snapshot, local, remote) and:

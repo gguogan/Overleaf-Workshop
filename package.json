@@ -442,14 +442,14 @@
         "when": "editorTextFocus && resourceScheme == overleaf-workshop"
       },
       {
-        "key": "ctrl+down",
-        "mac": "cmd+down",
+        "key": "ctrl+up",
+        "mac": "cmd+up",
         "command": "overleaf-workshop.manualSync.push",
         "when": "overleaf-workshop.activate"
       },
       {
-        "key": "ctrl+up",
-        "mac": "cmd+up",
+        "key": "ctrl+down",
+        "mac": "cmd+down",
         "command": "overleaf-workshop.manualSync.pull",
         "when": "overleaf-workshop.activate"
       },
