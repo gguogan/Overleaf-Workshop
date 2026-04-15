@@ -2,7 +2,7 @@
   "name": "overleaf-workshop",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.15.8",
+  "version": "0.15.9",
   "icon": "resources/icons/app_icon.png",
   "author": {
     "name": "iamhyc",
@@ -396,8 +396,22 @@
       },
       {
         "command": "overleaf-workshop.manualSync.sync",
-        "title": "Sync with Overleaf",
+        "title": "Sync with Overleaf (Smart)",
         "icon": "$(sync)",
+        "enablement": "overleaf-workshop.activate",
+        "category": "%extension.displayName%"
+      },
+      {
+        "command": "overleaf-workshop.manualSync.push",
+        "title": "Force Push to Overleaf",
+        "icon": "$(cloud-upload)",
+        "enablement": "overleaf-workshop.activate",
+        "category": "%extension.displayName%"
+      },
+      {
+        "command": "overleaf-workshop.manualSync.pull",
+        "title": "Force Pull from Overleaf",
+        "icon": "$(cloud-download)",
         "enablement": "overleaf-workshop.activate",
         "category": "%extension.displayName%"
       }
@@ -430,6 +444,18 @@
       {
         "key": "ctrl+down",
         "mac": "cmd+down",
+        "command": "overleaf-workshop.manualSync.push",
+        "when": "overleaf-workshop.activate"
+      },
+      {
+        "key": "ctrl+up",
+        "mac": "cmd+up",
+        "command": "overleaf-workshop.manualSync.pull",
+        "when": "overleaf-workshop.activate"
+      },
+      {
+        "key": "ctrl+shift+down",
+        "mac": "cmd+shift+down",
         "command": "overleaf-workshop.manualSync.sync",
         "when": "overleaf-workshop.activate"
       }

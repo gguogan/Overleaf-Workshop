@@ -297,13 +297,12 @@ export class SCMCollectionProvider extends vscode.Disposable {
         return record ? record.scm as LocalReplicaSCMProvider : undefined;
     }
 
-    async manualSync() {
+    private requireLocalReplica(): LocalReplicaSCMProvider | undefined {
         const scm = this.getLocalReplica();
         if (!scm) {
             vscode.window.showWarningMessage(vscode.l10n.t('No Local Replica configured. Please configure one via SCM settings first.'));
-            return;
         }
-        await scm.smartSync();
+        return scm;
     }
 
     get triggers() {
@@ -320,8 +319,27 @@ export class SCMCollectionProvider extends vscode.Disposable {
             vscode.commands.registerCommand(`${ROOT_NAME}.projectSCM.newSCM`, (scmProto) => {
                 return this.createNewSCM(scmProto);
             }),
-            vscode.commands.registerCommand(`${ROOT_NAME}.manualSync.sync`, () => {
-                return this.manualSync();
+            vscode.commands.registerCommand(`${ROOT_NAME}.manualSync.sync`, async () => {
+                const scm = this.requireLocalReplica();
+                if (scm) { await scm.smartSync(); }
+            }),
+            vscode.commands.registerCommand(`${ROOT_NAME}.manualSync.push`, async () => {
+                const scm = this.requireLocalReplica();
+                if (scm) {
+                    const result = await scm.pushToOverleaf();
+                    if (result === true) {
+                        vscode.window.showInformationMessage(vscode.l10n.t('Force pushed to Overleaf.'));
+                    }
+                }
+            }),
+            vscode.commands.registerCommand(`${ROOT_NAME}.manualSync.pull`, async () => {
+                const scm = this.requireLocalReplica();
+                if (scm) {
+                    const result = await scm.pullFromOverleaf();
+                    if (result === true) {
+                        vscode.window.showInformationMessage(vscode.l10n.t('Force pulled from Overleaf.'));
+                    }
+                }
             }),
             this as vscode.Disposable,
         ];
