@@ -1,4 +1,39 @@
-# Overleaf Workshop
+# Overleaf Workshop (Fork by gguogan)
+
+> **This is a fork of [overleaf-workshop/Overleaf-Workshop](https://github.com/overleaf-workshop/Overleaf-Workshop) with manual sync enhancements.**
+
+## What's New in This Fork
+
+### Manual Sync Commands (v0.15.9)
+
+Auto-sync is **disabled by default**. All syncing is manual and explicit:
+
+| Shortcut | Command | Behavior |
+|----------|---------|----------|
+| <kbd>Ctrl</kbd>+<kbd>Down</kbd> | **Force Push** | Overwrite Overleaf with local files |
+| <kbd>Ctrl</kbd>+<kbd>Up</kbd> | **Force Pull** | Overwrite local with Overleaf files |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> | **Smart Sync** | 3-way diff, auto push/pull/merge |
+
+**Smart Sync** compares three versions of each file (base snapshot, local, remote) and:
+- Auto-pulls files only changed on Overleaf
+- Auto-pushes files only changed locally
+- 3-way merges files changed on both sides
+- Opens VS Code diff editor for unresolvable conflicts
+- Shows a summary before applying any changes
+
+### Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `overleaf-workshop.manualSync.disableAutoSync` | `true` | Disable automatic file watchers. Sync only via manual commands. |
+
+### Install
+
+Download the latest `.vsix` from [Releases](https://github.com/gguogan/Overleaf-Workshop/releases), then in VS Code: Extensions > `...` > Install from VSIX.
+
+---
+
+## Original README
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/overleaf-workshop/Overleaf-Workshop)](https://github.com/overleaf-workshop/Overleaf-Workshop)
 [![version](https://img.shields.io/visual-studio-marketplace/v/iamhyc.overleaf-workshop)](https://marketplace.visualstudio.com/items?itemName=iamhyc.overleaf-workshop)
