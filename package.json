@@ -454,8 +454,8 @@
         "when": "overleaf-workshop.activate"
       },
       {
-        "key": "ctrl+shift+s",
-        "mac": "cmd+shift+s",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s",
         "command": "overleaf-workshop.manualSync.sync",
         "when": "overleaf-workshop.activate"
       }
