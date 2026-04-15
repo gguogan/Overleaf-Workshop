@@ -435,14 +435,14 @@
         "when": "editorTextFocus && resourceScheme == overleaf-workshop"
       },
       {
-        "key": "ctrl+alt+down",
-        "mac": "cmd+alt+down",
+        "key": "ctrl+up",
+        "mac": "cmd+up",
         "command": "overleaf-workshop.manualSync.pull",
         "when": "overleaf-workshop.activate"
       },
       {
-        "key": "ctrl+alt+up",
-        "mac": "cmd+alt+up",
+        "key": "ctrl+down",
+        "mac": "cmd+down",
         "command": "overleaf-workshop.manualSync.push",
         "when": "overleaf-workshop.activate"
       }
@@ -553,6 +553,12 @@
           "default": true,
           "scope": "machine",
           "markdownDescription": "%configuration.formatWithLineBreak.enabled.markdownDescription%"
+        },
+        "overleaf-workshop.manualSync.disableAutoSync": {
+          "type": "boolean",
+          "default": true,
+          "scope": "machine",
+          "markdownDescription": "Disable automatic file sync. When enabled, files are only synced via manual Pull/Push commands (Ctrl+Up / Ctrl+Down)."
         }
       }
     },

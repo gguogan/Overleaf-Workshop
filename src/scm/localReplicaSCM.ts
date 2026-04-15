@@ -457,6 +457,12 @@ export class LocalReplicaSCMProvider extends BaseSCM {
             ));
         }
 
+        // If manual sync mode, skip auto-sync watchers
+        const disableAutoSync = vscode.workspace.getConfiguration('overleaf-workshop').get<boolean>('manualSync.disableAutoSync', true);
+        if (disableAutoSync) {
+            return [];
+        }
+
         this.vfsWatcher = vscode.workspace.createFileSystemWatcher(
             new vscode.RelativePattern( this.vfs.origin, '**/*' )
         );
