@@ -532,6 +532,11 @@ export class LocalReplicaSCMProvider extends BaseSCM {
                     const localContent = await this.readFile(relPath);
                     if (localContent) {
                         const vfsUri = this.vfs.pathToUri(relPath);
+                        // Must read VFS file first to join doc and populate caches,
+                        // otherwise writeFile silently skips doc-type files.
+                        if (remoteSet.has(relPath)) {
+                            await vscode.workspace.fs.readFile(vfsUri);
+                        }
                         await vscode.workspace.fs.writeFile(vfsUri, localContent);
                         this.baseCache[relPath] = localContent;
                         this.setBypassCache(relPath, localContent);
