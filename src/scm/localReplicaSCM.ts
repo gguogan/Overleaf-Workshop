@@ -207,16 +207,23 @@ export class LocalReplicaSCMProvider extends BaseSCM {
     }
 
     /**
-     * Pull all files from Overleaf VFS to local, overwriting local content.
+     * Smart sync: compare base/local/remote for each file, show summary, then apply.
      */
-    public async pullFromOverleaf(root: string='/'): Promise<boolean|undefined> {
-        return await vscode.window.withProgress({
+    public async smartSync(root: string='/'): Promise<boolean|undefined> {
+        // Phase 1: Analyze differences
+        const analysis = await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: vscode.l10n.t('Pull from Overleaf'),
+            title: vscode.l10n.t('Analyzing differences...'),
             cancellable: true,
         }, async (progress, token) => {
-            // breadth-first search for the files in VFS
-            const files: [string,string][] = [];
+            const toPush: string[] = [];
+            const toPull: string[] = [];
+            const toMerge: string[] = [];
+            const unchanged: string[] = [];
+            const newRemote: string[] = [];
+
+            // walk VFS file tree
+            const files: string[] = [];
             const queue: string[] = [root];
             while (queue.length!==0) {
                 const nextRoot = queue.shift();
@@ -229,83 +236,159 @@ export class LocalReplicaSCMProvider extends BaseSCM {
                     if (type === vscode.FileType.Directory) {
                         queue.push(relPath+'/');
                     } else {
-                        files.push([name, relPath]);
+                        files.push(relPath);
                     }
                 }
             }
 
-            // pull each file from VFS to local
             const total = files.length;
             for (let i=0; i<total; i++) {
-                const [name, relPath] = files[i];
-                if (token.isCancellationRequested) { return false; }
+                const relPath = files[i];
+                if (token.isCancellationRequested) { return undefined; }
                 progress.report({increment: 100/total, message: relPath});
+
+                const baseContent = this.baseCache[relPath];
+                const localContent = await this.readFile(relPath);
                 const vfsUri = this.vfs.pathToUri(relPath);
+                const remoteContent = await vscode.workspace.fs.readFile(vfsUri);
+
+                const baseHash = hashCode(baseContent);
+                const localHash = localContent ? hashCode(localContent) : -1;
+                const remoteHash = hashCode(remoteContent);
+
+                if (baseContent===undefined || localContent===undefined) {
+                    // no base or no local file → treat as new remote file
+                    newRemote.push(relPath);
+                } else if (localHash === remoteHash) {
+                    // local and remote are the same → nothing to do
+                    unchanged.push(relPath);
+                } else if (baseHash === localHash && baseHash !== remoteHash) {
+                    // only remote changed
+                    toPull.push(relPath);
+                } else if (baseHash !== localHash && baseHash === remoteHash) {
+                    // only local changed
+                    toPush.push(relPath);
+                } else {
+                    // both changed
+                    toMerge.push(relPath);
+                }
+            }
+            return { toPush, toPull, toMerge, unchanged, newRemote };
+        });
+
+        if (!analysis) { return undefined; }
+        const { toPush, toPull, toMerge, unchanged, newRemote } = analysis;
+
+        // Phase 2: Show summary
+        if (toPush.length===0 && toPull.length===0 && toMerge.length===0 && newRemote.length===0) {
+            vscode.window.showInformationMessage(vscode.l10n.t('Everything is in sync. ({0} files checked)', unchanged.length));
+            return true;
+        }
+
+        const detailLines: string[] = [];
+        for (const f of toPull) { detailLines.push(`  $(cloud-download) ${f}`); }
+        for (const f of newRemote) { detailLines.push(`  $(cloud-download) ${f} (new)`); }
+        for (const f of toPush) { detailLines.push(`  $(cloud-upload) ${f}`); }
+        for (const f of toMerge) { detailLines.push(`  $(git-merge) ${f} (both changed)`); }
+
+        const summaryParts: string[] = [];
+        if (toPull.length+newRemote.length > 0) { summaryParts.push(`${toPull.length+newRemote.length} pull`); }
+        if (toPush.length > 0) { summaryParts.push(`${toPush.length} push`); }
+        if (toMerge.length > 0) { summaryParts.push(`${toMerge.length} merge`); }
+
+        const choice = await vscode.window.showInformationMessage(
+            vscode.l10n.t('Sync: {0}', summaryParts.join(', ')),
+            { modal: true, detail: detailLines.join('\n') },
+            'Sync All', 'Cancel'
+        );
+        if (choice !== 'Sync All') { return false; }
+
+        // Phase 3: Apply changes
+        return await vscode.window.withProgress({
+            location: vscode.ProgressLocation.Notification,
+            title: vscode.l10n.t('Syncing...'),
+            cancellable: true,
+        }, async (progress, token) => {
+            const totalActions = toPull.length + newRemote.length + toPush.length + toMerge.length;
+            let done = 0;
+
+            // Pull: remote-only changes → write to local
+            for (const relPath of [...toPull, ...newRemote]) {
+                if (token.isCancellationRequested) { return false; }
+                progress.report({increment: 100/totalActions, message: `↓ ${relPath}`});
                 try {
+                    const vfsUri = this.vfs.pathToUri(relPath);
                     const remoteContent = await vscode.workspace.fs.readFile(vfsUri);
-                    this.setBypassCache(relPath, remoteContent);
                     await this.writeFile(relPath, remoteContent);
                     this.baseCache[relPath] = remoteContent;
+                    this.setBypassCache(relPath, remoteContent);
                 } catch (error) {
                     console.error(`Pull failed for ${relPath}:`, error);
                 }
-            }
-            return true;
-        });
-    }
-
-    /**
-     * Push all local files to Overleaf VFS, overwriting remote content.
-     */
-    public async pushToOverleaf(root: string='/'): Promise<boolean|undefined> {
-        return await vscode.window.withProgress({
-            location: vscode.ProgressLocation.Notification,
-            title: vscode.l10n.t('Push to Overleaf'),
-            cancellable: true,
-        }, async (progress, token) => {
-            // walk VFS to get file list (use VFS as reference structure)
-            const files: [string,string][] = [];
-            const queue: string[] = [root];
-            while (queue.length!==0) {
-                const nextRoot = queue.shift();
-                const vfsUri = this.vfs.pathToUri(nextRoot!);
-                const items = await vscode.workspace.fs.readDirectory(vfsUri);
-                if (token.isCancellationRequested) { return undefined; }
-                for (const [name, type] of items) {
-                    const relPath = nextRoot + name;
-                    if (this.matchIgnorePatterns(relPath)) { continue; }
-                    if (type === vscode.FileType.Directory) {
-                        queue.push(relPath+'/');
-                    } else {
-                        files.push([name, relPath]);
-                    }
-                }
+                done++;
             }
 
-            // push each local file to VFS
-            const total = files.length;
-            let pushed = 0;
-            for (let i=0; i<total; i++) {
-                const [name, relPath] = files[i];
+            // Push: local-only changes → write to VFS
+            for (const relPath of toPush) {
                 if (token.isCancellationRequested) { return false; }
-                progress.report({increment: 100/total, message: relPath});
-                const localContent = await this.readFile(relPath);
-                if (localContent!==undefined) {
-                    const vfsUri = this.vfs.pathToUri(relPath);
-                    try {
-                        const remoteContent = await vscode.workspace.fs.readFile(vfsUri);
-                        // only push if content differs
-                        if (hashCode(localContent) !== hashCode(remoteContent)) {
-                            await vscode.workspace.fs.writeFile(vfsUri, localContent);
-                            pushed++;
-                        }
-                        this.setBypassCache(relPath, localContent);
+                progress.report({increment: 100/totalActions, message: `↑ ${relPath}`});
+                try {
+                    const localContent = await this.readFile(relPath);
+                    if (localContent) {
+                        const vfsUri = this.vfs.pathToUri(relPath);
+                        await vscode.workspace.fs.writeFile(vfsUri, localContent);
                         this.baseCache[relPath] = localContent;
-                    } catch (error) {
-                        console.error(`Push failed for ${relPath}:`, error);
+                        this.setBypassCache(relPath, localContent);
                     }
+                } catch (error) {
+                    console.error(`Push failed for ${relPath}:`, error);
                 }
+                done++;
             }
+
+            // Merge: both changed → 3-way merge with diff-match-patch
+            for (const relPath of toMerge) {
+                if (token.isCancellationRequested) { return false; }
+                progress.report({increment: 100/totalActions, message: `⇄ ${relPath}`});
+                try {
+                    const baseContent = this.baseCache[relPath];
+                    const localContent = await this.readFile(relPath);
+                    const vfsUri = this.vfs.pathToUri(relPath);
+                    const remoteContent = await vscode.workspace.fs.readFile(vfsUri);
+
+                    const dmp = new DiffMatchPatch();
+                    const baseStr = new TextDecoder().decode(baseContent);
+                    const localStr = new TextDecoder().decode(localContent!);
+                    const remoteStr = new TextDecoder().decode(remoteContent);
+
+                    const remotePatches = dmp.patch_make(baseStr, remoteStr);
+                    const [mergedStr, results] = dmp.patch_apply(remotePatches, localStr);
+                    const hasConflict = results.some(r => !r);
+
+                    if (hasConflict) {
+                        // Show conflict in diff editor for manual resolution
+                        const localUri = vscode.Uri.joinPath(this.baseUri, relPath);
+                        await vscode.commands.executeCommand('vscode.diff',
+                            vfsUri, localUri,
+                            `CONFLICT: ${relPath} (Remote ← → Local)`
+                        );
+                        vscode.window.showWarningMessage(
+                            vscode.l10n.t('Conflict in {0}: resolve manually, then sync again.', relPath)
+                        );
+                    } else {
+                        // Clean merge
+                        const mergedContent = new TextEncoder().encode(mergedStr);
+                        await this.writeFile(relPath, mergedContent);
+                        await vscode.workspace.fs.writeFile(vfsUri, mergedContent);
+                        this.baseCache[relPath] = mergedContent;
+                        this.setBypassCache(relPath, mergedContent);
+                    }
+                } catch (error) {
+                    console.error(`Merge failed for ${relPath}:`, error);
+                }
+                done++;
+            }
+
             return true;
         });
     }
