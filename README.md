@@ -31,6 +31,23 @@ Auto-sync is **disabled by default**. All syncing is manual and explicit:
 
 Download the latest `.vsix` from [Releases](https://github.com/gguogan/Overleaf-Workshop/releases), then in VS Code: Extensions > `...` > Install from VSIX.
 
+### Setup
+
+1. Open the Overleaf Workshop sidebar, click `+` to add server `https://www.overleaf.com`
+2. Click login > **Login with Cookies**, paste your `overleaf_session2=...` cookie
+3. Find your project, right-click > **Open Project Local Replica**, choose a local folder
+4. VS Code reopens that folder — sync commands are now active
+
+### Troubleshooting
+
+**"No Local Replica configured"** — This happens when the SCM config is lost (e.g. after re-login or switching machines). Fix:
+1. Make sure VFS is connected (no "Connection lost" error)
+2. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> > **"Overleaf Workshop: Configure Source Control"**
+3. Select **"Create Source Control: Local Replica"**
+4. Enter the path to your existing local folder (the one with `.overleaf/settings.json`)
+
+**"Connection lost: www.overleaf.com"** — Cookie expired or network issue. Get a fresh `overleaf_session2` cookie from your browser and re-login.
+
 ---
 
 ## Original README
