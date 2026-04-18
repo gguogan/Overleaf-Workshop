@@ -174,8 +174,9 @@ export class VirtualFileSystem extends vscode.Disposable {
     }
 
     private get initializingPromise(): Promise<ProjectEntity> {
-        // if retry connection failed 3 times, throw error
-        if (this.retryConnection >= 3) {
+        const MAX_RETRIES = 8;
+        // if retry connection failed MAX_RETRIES times, throw error
+        if (this.retryConnection >= MAX_RETRIES) {
             this.retryConnection = 0;
             vscode.window.showErrorMessage( vscode.l10n.t('Connection lost: {serverName}', {serverName:this.serverName}), vscode.l10n.t('Reload')).then((choice) => {
                 if (choice==='Reload') {
@@ -229,7 +230,13 @@ export class VirtualFileSystem extends vscode.Disposable {
             return project;
         }).catch((err) => {
             this.retryConnection += 1;
-            return this.initializingPromise;
+            // exponential backoff: 1s, 2s, 4s, 8s, 15s (capped) across up to MAX_RETRIES attempts
+            const delayMs = Math.min(15000, 1000 * Math.pow(2, this.retryConnection - 1));
+            return new Promise<ProjectEntity>((resolve, reject) => {
+                setTimeout(() => {
+                    this.initializingPromise.then(resolve).catch(reject);
+                }, delayMs);
+            });
         });
     }
 
