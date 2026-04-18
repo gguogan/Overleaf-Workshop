@@ -5,6 +5,7 @@ patches/**
 docs/**
 .gitignore
 .yarnrc
+CHAT_LOG.md
 **/tsconfig.json
 **/.eslintrc.json
 **/*.map
