@@ -15,6 +15,8 @@ export interface ServerPersist {
         identity: Identity;
         projects?: ProjectPersist[]
     };
+    // SCM configs stored at server level to survive logout/re-login
+    scmByProject?: {[projectId: string]: {[scmKey: string]: ProjectSCMPersist}};
 }
 type ServerPersistMap = {[name: string]: ServerPersist};
 
@@ -129,9 +131,15 @@ export class GlobalStateManager {
                 });
                 const projects = res.projects.map(project => {
                     const existProject = server.login?.projects?.find(p => p.id===project.id);
-                    // merge existing scm
-                    if (existProject) {
+                    // merge existing scm (server-level storage takes priority)
+                    const serverLevelScm = server.scmByProject?.[project.id];
+                    if (serverLevelScm) {
+                        project.scm = serverLevelScm;
+                    } else if (existProject?.scm) {
                         project.scm = existProject.scm;
+                        // migrate to server-level storage
+                        if (!server.scmByProject) { server.scmByProject = {}; }
+                        server.scmByProject[project.id] = existProject.scm as any;
                     }
                     return project;
                 });
@@ -177,6 +185,9 @@ export class GlobalStateManager {
     static getServerProjectSCMPersists(context:vscode.ExtensionContext, serverName:string, projectId:string) {
         const persists = context.globalState.get<ServerPersistMap>(keyServerPersists, {});
         const server   = persists[serverName];
+        // Prefer server-level storage (survives logout); fall back to old login-level storage
+        const serverLevelScm = server.scmByProject?.[projectId];
+        if (serverLevelScm) { return serverLevelScm as ProjectSCMPersistMap; }
         const project  = server.login?.projects?.find(project => project.id===projectId);
         const scmPersists = project?.scm ? project.scm as ProjectSCMPersistMap : {};
         return scmPersists;
@@ -185,17 +196,22 @@ export class GlobalStateManager {
     static updateServerProjectSCMPersist(context:vscode.ExtensionContext, serverName:string, projectId:string, scmKey:string, scmPersist?:ProjectSCMPersist) {
         const persists = context.globalState.get<ServerPersistMap>(keyServerPersists, {});
         const server   = persists[serverName];
+        if (!server) { return; }
+        // Store at server level so it survives logout/re-login
+        if (!server.scmByProject) { server.scmByProject = {}; }
+        const scmPersists = (server.scmByProject[projectId] ?? {}) as ProjectSCMPersistMap;
+        if (scmPersist===undefined) {
+            delete scmPersists[scmKey];
+        } else {
+            scmPersists[scmKey] = scmPersist;
+        }
+        server.scmByProject[projectId] = scmPersists;
+        // Also mirror into login.projects[].scm for backwards compat with other code paths
         const project  = server.login?.projects?.find(project => project.id===projectId);
         if (project) {
-            const scmPersists = (project.scm ?? {}) as ProjectSCMPersistMap;
-            if (scmPersist===undefined) {
-                delete scmPersists[scmKey];
-            } else {
-                scmPersists[scmKey] = scmPersist;
-            }
             project.scm = scmPersists;
-            context.globalState.update(keyServerPersists, persists);
         }
+        context.globalState.update(keyServerPersists, persists);
     }
 
     static getPdfViewPersist(context:vscode.ExtensionContext, uri:string): any {
