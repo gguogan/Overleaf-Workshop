@@ -104,13 +104,16 @@ export class ProjectManagerProvider implements vscode.TreeDataProvider<DataItem>
             if (element instanceof ServerItem) {
                 return GlobalStateManager.fetchServerProjects(this.context, element.api, element.name)
                 .catch(() => {
-                    // Direct logout if cookie expired
+                    // Cookie expired / network error: force a local logout so the UI returns to
+                    // a sane logged-out state. logoutServer now always succeeds locally even if
+                    // the remote logout call fails.
                     GlobalStateManager.logoutServer(this.context, element.api, element.name)
                     .then(success => {
                         if (success) {
                             this.refresh();
                         }
-                    });
+                    })
+                    .catch(() => { this.refresh(); });
                     return Promise.reject();
                 })
                 .then(projects => {
@@ -271,9 +274,15 @@ export class ProjectManagerProvider implements vscode.TreeDataProvider<DataItem>
             if (answer === "Yes") {
                 GlobalStateManager.logoutServer(this.context, server.api, server.name)
                 .then(success => {
-                    if (success) {
-                        this.refresh();
+                    // refresh regardless of return value so the tree always reflects current state
+                    this.refresh();
+                    if (!success) {
+                        vscode.window.showInformationMessage(vscode.l10n.t('Already logged out.'));
                     }
+                })
+                .catch(err => {
+                    this.refresh();
+                    vscode.window.showErrorMessage(vscode.l10n.t('Logout failed: {msg}', {msg: String(err?.message || err)}));
                 });
             }
         });

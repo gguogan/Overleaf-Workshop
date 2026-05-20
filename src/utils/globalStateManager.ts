@@ -106,9 +106,13 @@ export class GlobalStateManager {
         const server   = persists[name];
 
         if (server.login!==undefined) {
-            await api.logout(server.login.identity);
+            // best-effort remote logout; never let a failure block local state cleanup
+            // (stale cookies, offline, etc. would otherwise leave the user stuck)
+            try {
+                await api.logout(server.login.identity);
+            } catch { /* ignore */ }
             delete server.login;
-            context.globalState.update(keyServerPersists, persists);
+            await context.globalState.update(keyServerPersists, persists);
             return true;
         } else {
             return false;
@@ -147,16 +151,20 @@ export class GlobalStateManager {
                 context.globalState.update(keyServerPersists, persists);
                 return projects;
             } else {
-                // regex match for cookie expired
-                const cookieExpireRegex = /^302/;
-                if (res.message && cookieExpireRegex.test(res.message)) {
+                // Any non-success response after restart usually means the saved cookies are no
+                // longer valid. Treat 302 redirects, 401/403, and unknown errors uniformly:
+                // surface a clear message and reject so the tree can drop us back to the
+                // logged-out state instead of silently showing an empty list.
+                const cookieExpireRegex = /^(302|401|403)/;
+                const looksExpired = res.message && cookieExpireRegex.test(res.message);
+                if (looksExpired) {
                     vscode.window.showErrorMessage(vscode.l10n.t('Cookie Expired. Please Re-Login'));
-                    return Promise.reject();
-                }
-                if (res.message!==undefined) {
+                } else if (res.message!==undefined) {
                     vscode.window.showErrorMessage(res.message);
+                } else {
+                    vscode.window.showErrorMessage(vscode.l10n.t('Failed to fetch projects. Please Re-Login.'));
                 }
-                return [];
+                return Promise.reject();
             }
         } else {
             return [];
